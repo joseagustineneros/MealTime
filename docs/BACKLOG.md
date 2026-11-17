@@ -4,11 +4,13 @@
 - SPEC v0.1, WORKFLOW, AGENTS.md
 - `schema.sql`, `src/authz.ts`, `src/plan.ts`, `src/adherence.ts`, `src/auth.ts` (sesiones) con pruebas
 
+## Hecho (ciclo 2 — Claude)
+- C1 verificación de idToken de Google + `loginGoogle` (alta con rol fijo)
+- C2 `contextoPaciente` con auditoría + `test/d1falsa.ts` para pruebas con SQLite
+
 ## Ciclo 2 — en paralelo
 | # | Quién | Tarea |
 |---|---|---|
-| C1 | Claude | Verificación de idToken de Google (`POST /auth/google`) y alta de usuario con rol |
-| C2 | Claude | Capa de datos de vínculos: `contextoPaciente(db, actor, pacienteId)` → `Contexto` + registro en `audit_log` |
 | X1 | Codex | Router y rutas de invitaciones y vínculos sobre `actorDe` + `exigir` |
 | X2 | Codex | Panel web del nutricionista (estático, modo demo con datos ficticios) |
 | X3 | Codex (repo OnTime) | App: reemplazar el plan fijo por un Plan v1 en JSON (plan actual como predeterminado) |
