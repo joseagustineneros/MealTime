@@ -1,0 +1,58 @@
+// Verificación del idToken de Google (RS256 contra las claves públicas de Google). Núcleo de seguridad.
+
+export interface IdentidadGoogle { sub: string; email: string; nombre: string }
+
+const CERTS = 'https://www.googleapis.com/oauth2/v3/certs';
+const EMISORES = ['accounts.google.com', 'https://accounts.google.com'];
+
+const b64urlBytes = (s: string) =>
+  Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+const b64urlJson = (s: string) => JSON.parse(new TextDecoder().decode(b64urlBytes(s)));
+
+type Jwk = JsonWebKey & { kid?: string };
+let cache: { claves: Jwk[]; hasta: number } | null = null;
+
+async function clavesGoogle(fetchFn: typeof fetch, ahoraMs: number): Promise<Jwk[]> {
+  if (cache && cache.hasta > ahoraMs) return cache.claves;
+  const r = await fetchFn(CERTS);
+  if (!r.ok) throw new Error('no se pudieron obtener las claves de Google');
+  const { keys } = (await r.json()) as { keys: Jwk[] };
+  const maxAge = /max-age=(\d+)/.exec(r.headers.get('cache-control') ?? '')?.[1];
+  cache = { claves: keys, hasta: ahoraMs + (maxAge ? Number(maxAge) * 1000 : 3600_000) };
+  return keys;
+}
+
+/** Solo para pruebas. */
+export function _limpiarCache() { cache = null; }
+
+/**
+ * Devuelve la identidad si el token es válido para `clientId`; si no, null.
+ * Rechaza: firma inválida, alg distinto de RS256, emisor, audiencia, vencido, email no verificado.
+ */
+export async function verificarIdTokenGoogle(
+  idToken: string, clientId: string,
+  opts: { fetchFn?: typeof fetch; ahoraS?: number } = {},
+): Promise<IdentidadGoogle | null> {
+  const fetchFn = opts.fetchFn ?? fetch;
+  const ahoraS = opts.ahoraS ?? Math.floor(Date.now() / 1000);
+  const partes = idToken.split('.');
+  if (partes.length !== 3) return null;
+  let cab: { alg?: string; kid?: string }, p: Record<string, unknown>;
+  try { cab = b64urlJson(partes[0]); p = b64urlJson(partes[1]); } catch { return null; }
+  if (cab.alg !== 'RS256' || !cab.kid) return null;
+
+  const jwk = (await clavesGoogle(fetchFn, ahoraS * 1000)).find(k => k.kid === cab.kid);
+  if (!jwk) return null;
+  const clave = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e },
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', clave, b64urlBytes(partes[2]),
+    new TextEncoder().encode(`${partes[0]}.${partes[1]}`));
+  if (!ok) return null;
+
+  if (!EMISORES.includes(p.iss as string)) return null;
+  if (p.aud !== clientId) return null;
+  if (typeof p.exp !== 'number' || p.exp <= ahoraS) return null;
+  if (typeof p.iat === 'number' && p.iat > ahoraS + 300) return null;
+  if (p.email_verified !== true || typeof p.email !== 'string' || typeof p.sub !== 'string') return null;
+  return { sub: p.sub, email: p.email, nombre: typeof p.name === 'string' ? p.name : '' };
+}
