@@ -8,10 +8,11 @@
 - C1 verificación de idToken de Google + `loginGoogle` (alta con rol fijo)
 - C2 `contextoPaciente` con auditoría + `test/d1falsa.ts` para pruebas con SQLite
 
+- X1 router + invitaciones y vínculos (lo tomó Claude porque Codex no arrancó)
+
 ## Ciclo 2 — en paralelo
 | # | Quién | Tarea |
 |---|---|---|
-| X1 | Codex | Router y rutas de invitaciones y vínculos sobre `actorDe` + `exigir` |
 | X2 | Codex | Panel web del nutricionista (estático, modo demo con datos ficticios) |
 | X3 | Codex (repo OnTime) | App: reemplazar el plan fijo por un Plan v1 en JSON (plan actual como predeterminado) |
 
