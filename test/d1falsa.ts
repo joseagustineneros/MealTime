@@ -18,5 +18,10 @@ export function d1Falsa(): D1Database {
     };
     return st;
   };
-  return { prepare: prep, exec: async (s: string) => db.exec(s) } as unknown as D1Database;
+  const batch = async (sts: { run(): Promise<unknown> }[]) => {
+    db.exec('BEGIN');
+    try { const out = []; for (const st of sts) out.push(await st.run()); db.exec('COMMIT'); return out; }
+    catch (e) { db.exec('ROLLBACK'); throw e; }
+  };
+  return { prepare: prep, batch, exec: async (s: string) => db.exec(s) } as unknown as D1Database;
 }

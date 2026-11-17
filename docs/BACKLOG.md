@@ -10,6 +10,10 @@
 
 - X1 router + invitaciones y vínculos (lo tomó Claude porque Codex no arrancó)
 
+## Hecho (ciclo 3 — Claude)
+- Planes: propio (GET/PUT /plans/active), propuestos (POST /patients/:id/plans), pendientes y decisión del paciente
+- POST /logs idempotente; GET /patients con cumplimiento 7 días; GET /patients/:id/logs (máx. 92 días)
+
 ## Ciclo 2 — en paralelo
 | # | Quién | Tarea |
 |---|---|---|
@@ -17,10 +21,11 @@
 | X3 | Codex (repo OnTime) | App: reemplazar el plan fijo por un Plan v1 en JSON (plan actual como predeterminado) |
 
 ## Siguiente (ciclo 3)
-- Rutas de planes (activo, pendiente, aceptar/rechazar, proponer) y `POST /logs`
-- `GET /patients` con cumplimiento 7 días
 - App: vincular con código/QR, cola de sincronización, planes propuestos
 - Textos de consentimiento v1 y términos (requiere decisión del dueño)
+
+## Bloqueos
+- Codex: falta crear el entorno de MealTime y OnTime en chatgpt.com/codex (Settings → Environments). Mientras tanto X2 y X3 siguen pendientes.
 
 ## Decisiones pendientes del dueño
 - Texto de consentimiento y términos de uso (responsable / encargado del tratamiento)
