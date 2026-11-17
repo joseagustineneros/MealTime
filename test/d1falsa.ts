@@ -14,7 +14,7 @@ export function d1Falsa(): D1Database {
       bind(...a: unknown[]) { args = a; return st; },
       async first<T>() { return (db.prepare(sql).get(...(args as never[])) ?? null) as T; },
       async all<T>() { return { results: db.prepare(sql).all(...(args as never[])) as T[], success: true }; },
-      async run() { db.prepare(sql).run(...(args as never[])); return { success: true }; },
+      async run() { const r = db.prepare(sql).run(...(args as never[])); return { success: true, meta: { changes: Number(r.changes) } }; },
     };
     return st;
   };

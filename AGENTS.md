@@ -11,3 +11,4 @@ Lee `docs/SPEC.md` y `docs/WORKFLOW.md` antes de empezar. Claude lidera; tú con
 - Ningún dato real de salud en fixtures.
 - Pruebas con base de datos: usa `test/d1falsa.ts` (SQLite en memoria con el `schema.sql` real); no hace falta Miniflare.
 - `POST /auth/google` ya existe como `loginGoogle(body, env)` en `src/login.ts`: el router solo lo conecta.
+- En el router (`src/index.ts`) usa siempre `return await handler(...)` dentro del `try`: sin `await` los errores 401/403 escapan del manejo de errores.
