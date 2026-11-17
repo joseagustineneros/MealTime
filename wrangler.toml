@@ -1,0 +1,12 @@
+name = "ontime-cloud"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ontime"
+database_id = "PENDIENTE"   # se completa al crear la base en Cloudflare
+
+[vars]
+CONSENTIMIENTO_VIGENTE = "v1"
+# Secretos (wrangler secret put): SESSION_SECRET, GOOGLE_CLIENT_ID
