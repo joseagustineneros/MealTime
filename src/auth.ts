@@ -1,5 +1,5 @@
 // Sesiones firmadas (HMAC-SHA256). Núcleo de seguridad: cambios solo con aprobación de Claude.
-// Verificación del idToken de Google: pendiente (ciclo 2, Claude). Las rutas usan solo actorDe().
+// El idToken de Google se verifica en src/google.ts; el alta, en src/cuentas.ts. Las rutas usan solo actorDe().
 import type { Actor, Rol } from './authz';
 
 const enc = new TextEncoder();

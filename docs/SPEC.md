@@ -48,7 +48,7 @@ Ver `schema.sql`. Tablas: `users`, `invites`, `links`, `plans`, `meal_logs`, `no
 ## API (JSON, `Authorization: Bearer <sesión>`)
 | Método y ruta | Rol | Descripción |
 |---|---|---|
-| `POST /auth/google` | — | `{idToken}` → `{token, user}` (sesión firmada, 30 días) |
+| `POST /auth/google` | — | `{idToken, rol?}` → `{token, user}` (sesión firmada, 30 días). `rol` es obligatorio solo al crear la cuenta; otro rol distinto del registrado → 409 `rol_distinto` |
 | `GET /me` | ambos | Usuario actual |
 | `POST /invites` | nutri | → `{code, expiresAt}` (8 caracteres, 72 h, un uso) |
 | `POST /links/accept` | paciente | `{code, consentVersion}` → vínculo `active` |
