@@ -1,4 +1,4 @@
-# OnTime Cloud — Especificación v0.1
+# MealTime (OnTime Cloud) — Especificación v0.1
 
 Backend y panel para vincular pacientes (app Android OnTime) con nutricionistas.
 Infraestructura: Cloudflare Workers + D1. Sin dependencias pesadas.
