@@ -10,15 +10,18 @@ const b64urlBytes = (s: string) =>
 const b64urlJson = (s: string) => JSON.parse(new TextDecoder().decode(b64urlBytes(s)));
 
 type Jwk = JsonWebKey & { kid?: string };
-let cache: { claves: Jwk[]; hasta: number } | null = null;
+let cache: { claves: Jwk[]; hasta: number; traidas: number } | null = null;
 
-async function clavesGoogle(fetchFn: typeof fetch, ahoraMs: number): Promise<Jwk[]> {
-  if (cache && cache.hasta > ahoraMs) return cache.claves;
+// Recarga forzada como mucho una vez por minuto: un kid inventado no debe martillar a Google.
+const RECARGA_MIN_MS = 60_000;
+
+async function clavesGoogle(fetchFn: typeof fetch, ahoraMs: number, forzar = false): Promise<Jwk[]> {
+  if (cache && cache.hasta > ahoraMs && !(forzar && ahoraMs - cache.traidas >= RECARGA_MIN_MS)) return cache.claves;
   const r = await fetchFn(CERTS);
   if (!r.ok) throw new Error('no se pudieron obtener las claves de Google');
   const { keys } = (await r.json()) as { keys: Jwk[] };
   const maxAge = /max-age=(\d+)/.exec(r.headers.get('cache-control') ?? '')?.[1];
-  cache = { claves: keys, hasta: ahoraMs + (maxAge ? Number(maxAge) * 1000 : 3600_000) };
+  cache = { claves: keys, hasta: ahoraMs + (maxAge ? Number(maxAge) * 1000 : 3600_000), traidas: ahoraMs };
   return keys;
 }
 
@@ -37,15 +40,17 @@ export async function verificarIdTokenGoogle(
   const ahoraS = opts.ahoraS ?? Math.floor(Date.now() / 1000);
   const partes = idToken.split('.');
   if (partes.length !== 3) return null;
-  let cab: { alg?: string; kid?: string }, p: Record<string, unknown>;
-  try { cab = b64urlJson(partes[0]); p = b64urlJson(partes[1]); } catch { return null; }
+  let cab: { alg?: string; kid?: string }, p: Record<string, unknown>, firma: Uint8Array;
+  try { cab = b64urlJson(partes[0]); p = b64urlJson(partes[1]); firma = b64urlBytes(partes[2]); } catch { return null; }
   if (cab.alg !== 'RS256' || !cab.kid) return null;
 
-  const jwk = (await clavesGoogle(fetchFn, ahoraS * 1000)).find(k => k.kid === cab.kid);
-  if (!jwk) return null;
+  // kid desconocido: Google pudo rotar sus claves antes de que venza la caché; se recarga una vez.
+  let jwk = (await clavesGoogle(fetchFn, ahoraS * 1000)).find(k => k.kid === cab.kid);
+  if (!jwk) jwk = (await clavesGoogle(fetchFn, ahoraS * 1000, true)).find(k => k.kid === cab.kid);
+  if (!jwk || jwk.kty !== 'RSA') return null;
   const clave = await crypto.subtle.importKey('jwk', { kty: jwk.kty, n: jwk.n, e: jwk.e },
     { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', clave, b64urlBytes(partes[2]),
+  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', clave, firma,
     new TextEncoder().encode(`${partes[0]}.${partes[1]}`));
   if (!ok) return null;
 

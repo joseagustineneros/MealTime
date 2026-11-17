@@ -1,14 +1,27 @@
 // Capa de datos del núcleo: alta de usuarios y contexto de permisos. Núcleo de seguridad.
 import type { Actor, Contexto, Rol } from './authz';
 import type { IdentidadGoogle } from './google';
+import { ErrorHttp } from './http';
 
-/** Busca o crea el usuario. El rol solo se usa en el alta; después no cambia. */
-export async function usuarioDesdeGoogle(db: D1Database, id: IdentidadGoogle, rolAlta: Rol): Promise<Actor> {
+/**
+ * Busca o crea el usuario. Un usuario tiene un solo rol:
+ * - cuenta nueva sin `rolAlta` → 400 `rol_requerido` (no se asume paciente);
+ * - cuenta existente con otro `rolAlta` → 409 `rol_distinto`; sin `rolAlta`, ingresa con su rol.
+ */
+export async function usuarioDesdeGoogle(db: D1Database, id: IdentidadGoogle, rolAlta?: Rol): Promise<Actor> {
   const previo = await db.prepare('SELECT id, rol FROM users WHERE google_sub = ?')
     .bind(id.sub).first<{ id: string; rol: Rol }>();
   if (previo) {
-    await db.prepare('UPDATE users SET email = ?, nombre = ? WHERE id = ?').bind(id.email, id.nombre, previo.id).run();
+    if (rolAlta !== undefined && rolAlta !== previo.rol) {
+      throw new ErrorHttp(409, 'rol_distinto', `Esta cuenta ya está registrada como ${previo.rol}`);
+    }
+    // Si el token no trae nombre, se conserva el que había.
+    await db.prepare("UPDATE users SET email = ?, nombre = COALESCE(NULLIF(?, ''), nombre) WHERE id = ?")
+      .bind(id.email, id.nombre, previo.id).run();
     return { id: previo.id, rol: previo.rol };
+  }
+  if (rolAlta === undefined) {
+    throw new ErrorHttp(400, 'rol_requerido', 'Cuenta nueva: indica el rol ("paciente" o "nutricionista")');
   }
   const nuevo = crypto.randomUUID();
   await db.prepare('INSERT INTO users (id, google_sub, email, nombre, rol) VALUES (?, ?, ?, ?, ?)')

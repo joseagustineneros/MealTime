@@ -43,6 +43,30 @@ describe('idToken de Google', () => {
     expect(await verificar(await token({}, { alg: 'HS256', kid: 'k1' }))).toBeNull();
     expect(await verificar(await token({}, { alg: 'RS256', kid: 'otra' }))).toBeNull();
   });
+  it('rotación: kid nuevo con caché vigente recarga las claves (máx. 1 vez por minuto)', async () => {
+    let llamadas = 0;
+    const viejas = { ...jwk, kid: 'vieja' };
+    let lista: JsonWebKey[] = [viejas];
+    const f = (async () => { llamadas++; return new Response(JSON.stringify({ keys: lista }),
+      { headers: { 'cache-control': 'max-age=3600' } }); }) as typeof fetch;
+    const t = await token({});
+    // Caché cargada con la clave vieja; recién traída, no se fuerza la recarga.
+    expect(await verificarIdTokenGoogle(t, CLIENT, { fetchFn: f, ahoraS: AHORA })).toBeNull();
+    expect(llamadas).toBe(1);
+    // Google rota a k1. Pasado un minuto, el kid desconocido fuerza una recarga.
+    lista = [jwk];
+    expect(await verificarIdTokenGoogle(t, CLIENT, { fetchFn: f, ahoraS: AHORA + 61 }))
+      .toEqual({ sub: 'g-123', email: 'p@x.cl', nombre: 'Prueba' });
+    expect(llamadas).toBe(2);
+    // Un kid inventado no vuelve a pedir claves dentro del mismo minuto.
+    expect(await verificarIdTokenGoogle(await token({}, { alg: 'RS256', kid: 'inventada' }), CLIENT,
+      { fetchFn: f, ahoraS: AHORA + 62 })).toBeNull();
+    expect(llamadas).toBe(2);
+  });
+  it('firma con base64 inválido → null, no excepción', async () => {
+    const [c, p] = (await token({})).split('.');
+    expect(await verificar(`${c}.${p}.@@@`)).toBeNull();
+  });
   it('rechaza firma alterada y basura', async () => {
     const t = await token({});
     const [c, , f] = t.split('.');
@@ -53,13 +77,22 @@ describe('idToken de Google', () => {
 });
 
 describe('usuarios y contexto', () => {
-  it('el rol solo se fija en el alta', async () => {
+  it('el rol solo se fija en el alta; otro rol → 409, alta sin rol → 400', async () => {
     const db = d1Falsa();
     const ident = { sub: 's1', email: 'a@x.cl', nombre: 'A' };
     const a = await usuarioDesdeGoogle(db, ident, 'nutricionista');
-    const b = await usuarioDesdeGoogle(db, { ...ident, nombre: 'A2' }, 'paciente');
-    expect(b).toEqual(a);
     expect(a.rol).toBe('nutricionista');
+    expect(await usuarioDesdeGoogle(db, { ...ident, nombre: 'A2' })).toEqual(a);
+    expect(await usuarioDesdeGoogle(db, ident, 'nutricionista')).toEqual(a);
+    await expect(usuarioDesdeGoogle(db, ident, 'paciente')).rejects.toMatchObject({ status: 409, codigo: 'rol_distinto' });
+    await expect(usuarioDesdeGoogle(db, { ...ident, sub: 's2' })).rejects.toMatchObject({ status: 400, codigo: 'rol_requerido' });
+  });
+  it('token sin nombre no borra el nombre guardado', async () => {
+    const db = d1Falsa();
+    const a = await usuarioDesdeGoogle(db, { sub: 's1', email: 'a@x.cl', nombre: 'Ana' }, 'paciente');
+    await usuarioDesdeGoogle(db, { sub: 's1', email: 'nuevo@x.cl', nombre: '' });
+    const u = await db.prepare('SELECT email, nombre FROM users WHERE id = ?').bind(a.id).first<{ email: string; nombre: string }>();
+    expect(u).toEqual({ email: 'nuevo@x.cl', nombre: 'Ana' });
   });
   it('vínculo activo habilita y audita; revocado no', async () => {
     const db = d1Falsa();
@@ -89,5 +122,19 @@ describe('POST /auth/google', () => {
     expect(await verificarSesion(d.token, 's')).toEqual(d.user);
     expect((await loginGoogle({ idToken: 'x' }, env, fetchFalso)).status).toBe(401);
     expect((await loginGoogle({}, env, fetchFalso)).status).toBe(400);
+  });
+  it('rol: reingreso sin rol, rol distinto 409, alta sin rol 400, rol inválido 400', async () => {
+    const env = { DB: d1Falsa(), SESSION_SECRET: 's', GOOGLE_CLIENT_ID: CLIENT };
+    const ahora = Math.floor(Date.now() / 1000);
+    const vigente = (extra: Record<string, unknown> = {}) => token({ iat: ahora - 10, exp: ahora + 3600, ...extra });
+    expect((await loginGoogle({ idToken: await vigente() }, env, fetchFalso)).data)
+      .toMatchObject({ error: 'rol_requerido' });
+    const alta = await loginGoogle({ idToken: await vigente(), rol: 'nutricionista' }, env, fetchFalso);
+    expect(alta.status).toBe(200);
+    const reingreso = await loginGoogle({ idToken: await vigente() }, env, fetchFalso);
+    expect((reingreso.data as { user: { rol: string } }).user.rol).toBe('nutricionista');
+    const otro = await loginGoogle({ idToken: await vigente(), rol: 'paciente' }, env, fetchFalso);
+    expect(otro).toMatchObject({ status: 409, data: { error: 'rol_distinto' } });
+    expect((await loginGoogle({ idToken: await vigente(), rol: 'admin' }, env, fetchFalso)).status).toBe(400);
   });
 });
